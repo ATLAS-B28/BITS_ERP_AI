@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+pandas
+numpy
+sqlalchemy
+prophet
+groq
+pydantic
+plotly

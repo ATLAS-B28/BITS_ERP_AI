@@ -1,4 +1,5 @@
 from groq import Groq
+import groq as _groq
 from services.db import (
     get_inventory_summary, get_po_summary,
     get_sales_summary, get_budget_summary, get_low_stock
@@ -9,7 +10,10 @@ import json
 
 load_dotenv()
 
+# Initialize Groq client from env
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+DEFAULT_GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
+
 
 def build_erp_context():
     try:
@@ -20,56 +24,63 @@ def build_erp_context():
         low_stock = get_low_stock()
 
         context = f"""
-You are an ERP assistant for BITS ERP — a retail and logistics management system.
-You have access to real-time data from the system. Answer questions clearly and concisely.
+You are an ERP assistant for BITS ERP — a retail and logistics system.
+Answer questions clearly and concisely based on the data below.
 
-=== INVENTORY SUMMARY ===
+=== INVENTORY ===
 Total Products: {len(inventory)}
-Total Stock Value: ₹{inventory['stock_value'].sum():,.2f}
-Top products by value:
-{inventory.head(5)[['name','category','total_qty','stock_value']].to_string(index=False)}
+Total Stock Value: ₹{float(inventory['stock_value'].sum()):,.2f}
+{inventory.head(5)[['name','total_qty','stock_value']].to_string(index=False) if not inventory.empty else "No products"}
 
-=== LOW STOCK ALERTS ===
-{f"Items below reorder level: {len(low_stock)}" if not low_stock.empty else "All stock levels healthy"}
-{low_stock[['name','quantity','reorder_level','deficit']].to_string(index=False) if not low_stock.empty else ""}
+=== LOW STOCK ===
+{f"{len(low_stock)} items below reorder level" if not low_stock.empty else "All stock healthy"}
 
 === PURCHASE ORDERS ===
-{po[['status','count','total']].to_string(index=False) if not po.empty else "No purchase orders"}
+{po.to_string(index=False) if not po.empty else "No purchase orders"}
 
 === SALES ORDERS ===
-{sales[['status','count','total']].to_string(index=False) if not sales.empty else "No sales orders"}
+{sales.to_string(index=False) if not sales.empty else "No sales orders"}
 
-=== ACTIVE BUDGETS ===
-{budgets[['name','module','allocated_amount','spent_amount','remaining']].to_string(index=False) if not budgets.empty else "No active budgets"}
-
-Answer questions about this ERP data. Be specific with numbers when available.
-If asked about something not in the data, say you don't have that information.
-Keep responses concise — 2-4 sentences maximum unless a list is needed.
+=== BUDGETS ===
+{budgets.to_string(index=False) if not budgets.empty else "No active budgets"}
 """
-        return context
-    except Exception as e:
-        return f"ERP Assistant ready. (Context fetch error: {str(e)})"
+        return context.strip()
 
-def chat_with_erp(messages: list, refresh_context: bool = False):
+    except Exception as e:
+        print(f"Context build error: {e}")
+        return "You are an ERP assistant for BITS ERP. The database context could not be loaded right now. Answer general ERP questions."
+
+
+def chat_with_erp(messages: list):
     context = build_erp_context()
+    print(f"Context length: {len(context)} chars")
 
     system_message = {
         "role": "system",
         "content": context
     }
 
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[system_message] + messages,
-        temperature=0.3,
-        max_tokens=500,
-    )
+    model_name = os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL)
 
-    return {
-        "reply": response.choices[0].message.content,
-        "model": response.model,
-        "usage": {
-            "prompt_tokens": response.usage.prompt_tokens,
-            "completion_tokens": response.usage.completion_tokens,
+    try:
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=[system_message] + messages,
+            temperature=0.3,
+            max_tokens=500,
+        )
+        print(f"Response preview: {str(response.choices[0].message.content)[:120]}")
+        return {
+            "reply": response.choices[0].message.content,
+            "model": response.model,
+            "usage": {
+                "prompt_tokens": getattr(response.usage, 'prompt_tokens', None),
+                "completion_tokens": getattr(response.usage, 'completion_tokens', None),
+            }
         }
-    }
+    except _groq.NotFoundError as e:
+        print(f"Model not found: {e}")
+        return {"error": "model_not_found", "message": str(e)}
+    except Exception as e:
+        print(f"Groq error: {e}")
+        return {"error": "api_error", "message": str(e)}
