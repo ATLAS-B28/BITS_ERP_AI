@@ -112,12 +112,15 @@ def get_inventory_analytics():
     if df.empty:
         return {"categories": [], "products": [], "total_value": 0}
 
+    df = df.replace([np.inf, -np.inf], np.nan).fillna(0)
+
     # category breakdown
     category_df = df.groupby('category').agg(
         total_qty=('total_qty', 'sum'),
         total_value=('stock_value', 'sum'),
         product_count=('name', 'count')
     ).reset_index()
+    category_df = category_df.replace([np.inf, -np.inf], np.nan).fillna(0)
 
     return {
         "categories": category_df.to_dict(orient='records'),

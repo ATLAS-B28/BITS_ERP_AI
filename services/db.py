@@ -41,10 +41,10 @@ def get_stock_movements():
 def get_inventory_summary():
     query = text("""
         SELECT 
-            p.name, p.category, p.unit_price,
+            p.name, p.category, COALESCE(p.unit_price, 0) as unit_price,
             COALESCE(SUM(i.quantity), 0) as total_qty,
             COALESCE(SUM(i.quantity * p.unit_price), 0) as stock_value,
-            MIN(i.reorder_level) as reorder_level
+            COALESCE(MIN(i.reorder_level), 0) as reorder_level
         FROM products p
         LEFT JOIN inventory i ON p.id = i.product_id
         WHERE p.active = true
