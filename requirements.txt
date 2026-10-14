@@ -4,6 +4,7 @@ python-dotenv
 pandas
 numpy
 sqlalchemy
+psycopg[binary]
 prophet
 groq
 pydantic
